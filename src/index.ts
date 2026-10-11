@@ -4,13 +4,17 @@
  * - Footer status line: resolved provider, quantization, retry count.
  * - `/openrouter-pin`: idempotently merge the shipped config fragments
  *   (provider pinning + retry policy) into `models.json`/`settings.json`
- *   of the Pi agent directory. A one-time hint is shown on session start
- *   when the fragments are not applied yet.
+ *   of the Pi agent directory, plus per-model compaction thresholds
+ *   resolved from the context lengths OpenRouter declares for the
+ *   enabled `openrouter/*` models (auto-compact at ~350K tokens for
+ *   large windows; built-in default below that). A one-time hint is
+ *   shown on session start when the static fragments are not applied yet.
  */
 
 import process from "node:process";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { applyConfig, checkApplied, getAgentDir } from "./apply-config.ts";
+import { tuneConfigTargets } from "./compaction-tune.ts";
 import { installOpenRouterFooter } from "./footer-render.ts";
 import { CONFIG_TARGETS } from "./fragments.ts";
 import { createStatusLine } from "./status-line.ts";
@@ -29,7 +33,7 @@ async function applyShippedConfig(ctx: ExtensionCommandContext): Promise<void> {
 	if (ctx.mode === "tui") {
 		confirmed = await ctx.ui.confirm(
 			COMMAND_NAME,
-			"Merge pinned providers + retry policy into models.json and settings.json?",
+			"Merge pinned providers + retry policy + per-model compaction thresholds into models.json and settings.json?",
 		);
 	}
 	if (!confirmed) {
@@ -37,8 +41,24 @@ async function applyShippedConfig(ctx: ExtensionCommandContext): Promise<void> {
 		return;
 	}
 	try {
-		const outcomes = await applyConfig(getAgentDir(), CONFIG_TARGETS);
+		// Augment the static targets with per-model compaction thresholds
+		// resolved from the OpenRouter catalog; failures degrade to the
+		// static targets and are reported as warnings.
+		const { targets, tuned, warnings } = await tuneConfigTargets(getAgentDir(), CONFIG_TARGETS);
+		for (const warning of warnings) {
+			ctx.ui.notify(`${COMMAND_NAME}: ${warning}`, "warning");
+		}
+		const outcomes = await applyConfig(getAgentDir(), targets);
 		reportOutcomes(ctx, outcomes);
+		if (
+			tuned.length > 0 &&
+			outcomes.some((outcome) => outcome.file === "settings.json" && outcome.status !== "unchanged")
+		) {
+			ctx.ui.notify(
+				`${COMMAND_NAME}: compaction thresholds pinned for ${tuned.length} model(s) — restart Pi or run /reload to apply`,
+				"info",
+			);
+		}
 	} catch (error) {
 		ctx.ui.notify(`${COMMAND_NAME}: ${describeError(error)}`, "error");
 	}
@@ -114,7 +134,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Apply the shipped OpenRouter provider pin and retry policy to models.json/settings.json",
+		description:
+			"Apply the shipped OpenRouter provider pin and retry policy plus per-model compaction thresholds to models.json/settings.json",
 		handler: async (_args, ctx) => {
 			await applyShippedConfig(ctx);
 		},
