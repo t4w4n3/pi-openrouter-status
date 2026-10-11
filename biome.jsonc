@@ -1,0 +1,68 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": ["**", "!**/node_modules", "!bun.lock"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 120
+	},
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			// Every stable rule group at error = max strictness. The few runtime
+			// constraints imposed by the Pi extension host are waived in the
+			// "overrides" section below, with justification.
+			"correctness": "error",
+			"suspicious": "error",
+			"complexity": "error",
+			"style": "error",
+			"performance": "error",
+			"security": "error",
+			"a11y": "error",
+			"nursery": {
+				"recommended": true
+			}
+		}
+	},
+	"overrides": [
+		{
+			// Pi extensions execute inside the host process (bun/node); reading
+			// the agent directory requires node:fs. noNodejsModules targets
+			// browser bundles and does not apply to this runtime.
+			"includes": ["src/**/*.ts", "test/**/*.ts"],
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noNodejsModules": "off"
+					}
+				}
+			}
+		},
+		{
+			// Test fixtures legitimately embed literal numbers (widths, token
+			// counts, HTTP statuses); naming every one hurts readability.
+			"includes": ["test/**/*.ts"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noMagicNumbers": "off"
+					}
+				}
+			}
+		}
+	]
+}

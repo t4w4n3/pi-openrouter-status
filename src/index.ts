@@ -1,0 +1,122 @@
+/**
+ * Pi extension: OpenRouter status line + shipped OpenRouter/retry config.
+ *
+ * - Footer status line: resolved provider, quantization, retry count.
+ * - `/openrouter-pin`: idempotently merge the shipped config fragments
+ *   (provider pinning + retry policy) into `models.json`/`settings.json`
+ *   of the Pi agent directory. A one-time hint is shown on session start
+ *   when the fragments are not applied yet.
+ */
+
+import process from "node:process";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { applyConfig, checkApplied, getAgentDir } from "./apply-config.ts";
+import { installOpenRouterFooter } from "./footer-render.ts";
+import { CONFIG_TARGETS } from "./fragments.ts";
+import { createStatusLine } from "./status-line.ts";
+
+const COMMAND_NAME = "openrouter-pin";
+
+function describeError(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
+
+async function applyShippedConfig(ctx: ExtensionCommandContext): Promise<void> {
+	let confirmed = true;
+	if (ctx.mode === "tui") {
+		confirmed = await ctx.ui.confirm(
+			COMMAND_NAME,
+			"Merge pinned providers + retry policy into models.json and settings.json?",
+		);
+	}
+	if (!confirmed) {
+		ctx.ui.notify("Aborted, nothing was written.", "info");
+		return;
+	}
+	try {
+		const outcomes = await applyConfig(getAgentDir(), CONFIG_TARGETS);
+		reportOutcomes(ctx, outcomes);
+	} catch (error) {
+		ctx.ui.notify(`${COMMAND_NAME}: ${describeError(error)}`, "error");
+	}
+}
+
+function reportOutcomes(ctx: ExtensionCommandContext, outcomes: Awaited<ReturnType<typeof applyConfig>>): void {
+	const applied = outcomes.filter((outcome) => outcome.status !== "unchanged");
+	if (applied.length === 0) {
+		ctx.ui.notify(`${COMMAND_NAME}: config already applied, nothing to do.`, "info");
+		return;
+	}
+	for (const outcome of applied) {
+		ctx.ui.notify(`${COMMAND_NAME}: ${outcome.status} ${outcome.file}`, "info");
+	}
+}
+
+async function hintMissingConfig(ctx: ExtensionContext, hinted: { shown: boolean }): Promise<void> {
+	if (hinted.shown) {
+		return;
+	}
+	hinted.shown = true;
+	try {
+		const checks = await checkApplied(getAgentDir(), CONFIG_TARGETS);
+		notifyMissing(
+			ctx,
+			checks.filter((check) => !check.applied).map((check) => check.file),
+		);
+	} catch {
+		// config dir unreadable: stay silent, /openrouter-pin reports errors
+	}
+}
+
+function notifyMissing(ctx: ExtensionContext, missing: readonly string[]): void {
+	if (missing.length > 0) {
+		ctx.ui.notify(`${COMMAND_NAME}: shipped config not applied (${missing.join(", ")}) — run /${COMMAND_NAME}`, "info");
+	}
+}
+
+// Pi discovers extensions through the module's default export; this is the
+// loading contract, not a style choice.
+// biome-ignore lint/style/noDefaultExport: required by the Pi extension loader
+export default function (pi: ExtensionAPI) {
+	const line = createStatusLine();
+	let footerInstalled = false;
+	const hinted = { shown: false };
+	// Extensions read HOME (and honor PI_CODING_AGENT_DIR via getAgentDir);
+	// there is no alternative in the Pi runtime contract.
+	// biome-ignore lint/style/noProcessEnv: agent dir + home resolution
+	const { HOME, USERPROFILE } = process.env;
+	const home = HOME ?? USERPROFILE;
+
+	pi.on("message_end", (event) => {
+		line.onMessageEnd(event);
+	});
+
+	pi.on("provider_stream_event", async (event) => {
+		await line.onProviderStreamEvent(event);
+	});
+
+	pi.on("session_before_compact", (event) => {
+		line.onBeforeCompaction(event);
+	});
+
+	pi.on("before_agent_start", () => {
+		line.onBeforeAgentStart();
+	});
+
+	pi.on("session_start", async (_event, ctx) => {
+		if (!footerInstalled) {
+			footerInstalled = installOpenRouterFooter(ctx, line, home);
+		}
+		await hintMissingConfig(ctx, hinted);
+	});
+
+	pi.registerCommand(COMMAND_NAME, {
+		description: "Apply the shipped OpenRouter provider pin and retry policy to models.json/settings.json",
+		handler: async (_args, ctx) => {
+			await applyShippedConfig(ctx);
+		},
+	});
+}

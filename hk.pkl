@@ -1,0 +1,29 @@
+amends "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Config.pkl"
+
+// Shift-left git hooks. The top-level steps below automatically create the
+// `check`, `fix`, and `pre-commit` hooks (pre-commit applies fixes, stages
+// them, and stashes unstaged work). The pre-push hook runs the full mise
+// gate so hook surface and manual workflow stay identical.
+
+steps {
+	["biome"] {
+		glob = List("*.ts", "*.json", "*.jsonc")
+		exclude = List("bun.lock")
+		check = "biome check --no-errors-on-unmatched {{files}}"
+		fix = "biome check --write --no-errors-on-unmatched {{files}}"
+	}
+	["secrets"] {
+		glob = List("*")
+		check = "mise run secrets"
+	}
+}
+
+hooks {
+	["pre-push"] {
+		steps {
+			["full-check"] {
+				check = "mise run check"
+			}
+		}
+	}
+}

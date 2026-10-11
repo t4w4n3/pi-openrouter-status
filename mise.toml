@@ -1,0 +1,65 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+
+# Single entrypoint for the developer experience: every quality and security
+# gate is a mise task, run locally (shift-left — there is no CI).
+#   mise install      provision the pinned toolchain
+#   mise run check    full pre-push gate (lint + types + tests + security)
+
+[tools]
+bun = "1.3.14"
+biome = "2.5.15"
+hk = "2.5.0"
+semgrep = "1.180.0"
+trivy = "0.75.0"
+gitleaks = "8.30.1"
+osv-scanner = "2.6.0"
+
+# --- code quality ------------------------------------------------------------
+
+[tasks.install]
+description = "Provision pinned tools and npm dependencies"
+run = ["mise install", "bun install"]
+
+[tasks.lint]
+description = "Biome check at maximum strictness (lint + format + import order)"
+run = "biome check --no-errors-on-unmatched ."
+
+[tasks."lint:fix"]
+description = "Auto-fix lint and formatting issues"
+run = "biome check --write --no-errors-on-unmatched ."
+
+[tasks.typecheck]
+description = "TypeScript strict check (no emit)"
+run = "bunx tsc --noEmit"
+
+[tasks.test]
+description = "Run unit tests with bun test"
+run = "bun test"
+
+# --- security (shift-left, all local) ----------------------------------------
+
+[tasks.sast]
+description = "Semgrep SAST: TypeScript rules + secret patterns"
+run = "semgrep scan --config p/typescript --config p/secrets --error --metrics=off ."
+
+[tasks.secrets]
+description = "Gitleaks secret scan over full git history"
+run = "gitleaks git . --no-banner --redact"
+
+[tasks.vuln]
+description = "OSV-Scanner dependency vulnerability scan (bun.lock)"
+run = "osv-scanner scan --lockfile=bun.lock --format=table"
+
+[tasks.scan]
+description = "Trivy scan: vulnerabilities, misconfigurations, secrets"
+run = "trivy fs --scanners vuln,misconfig,secret --exit-code 1 ."
+
+# --- aggregate gates ---------------------------------------------------------
+
+[tasks.check]
+description = "Full quality + security gate (same as pre-push hook)"
+depends = ["lint", "typecheck", "test", "sast", "secrets", "vuln", "scan"]
+
+[tasks."check-fast"]
+description = "Fast gate used by the pre-commit hook"
+depends = ["lint", "typecheck", "test"]
