@@ -6,9 +6,11 @@
  *
  * - `models.json` — OpenRouter `modelOverrides`:
  *   - `z-ai/glm-5.3-flash`: restrict routing to fp8 endpoints (StreamLake,
- *     Novita, GMICloud) sorted by price. The status line renders the
- *     provider actually resolved from these chunks, e.g.
- *     `⇢ StreamLake · fp8 ↻1`.
+ *     Novita, GMICloud) sorted by price, with fallbacks disabled so a 429
+ *     surfaces to Pi instead of failing over (preserving the resolved
+ *     endpoint's context cache; Pi's retry policy then backs off against
+ *     the same endpoint). The status line renders the provider actually
+ *     resolved from these chunks, e.g. `⇢ StreamLake · fp8 ↻1`.
  *   - `meta/muse-spark-1.3-contributor`: session-affinity compat flags so
  *     consecutive requests stick to the same endpoint.
  * - `settings.json` — agent-level retry policy for transient failures.
@@ -31,6 +33,8 @@ export const modelsFragment: JsonValue = {
 						provider: {
 							only: ["streamlake/fp8", "novita/fp8", "gmicloud/fp8"],
 							sort: { by: "price" },
+							// biome-ignore lint/style/useNamingConvention: field name from the OpenRouter API payload
+							allow_fallbacks: false,
 						},
 					},
 				},

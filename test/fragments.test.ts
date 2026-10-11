@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CONFIG_TARGETS, type ConfigTarget } from "../src/fragments.ts";
+import { CONFIG_TARGETS, type ConfigTarget, GLM_MODEL_ID } from "../src/fragments.ts";
 import { deepContains, type JsonValue } from "../src/json-merge.ts";
 
 /** Unwrap an optional value or fail the test. */
@@ -23,28 +23,26 @@ function at(root: JsonValue, path: readonly string[]): JsonValue | undefined {
 
 const modelsTarget: ConfigTarget = must(CONFIG_TARGETS.find((target) => target.file === "models.json"));
 
+function glmProvider(key: string): JsonValue | undefined {
+	return at(modelsTarget.fragment, [
+		"providers",
+		"openrouter",
+		"modelOverrides",
+		GLM_MODEL_ID,
+		"samplingParams",
+		"provider",
+		key,
+	]);
+}
+
 describe("config fragments", () => {
 	test("models fragment pins glm-5.3-flash to fp8 endpoints sorted by price", () => {
-		const only = at(modelsTarget.fragment, [
-			"providers",
-			"openrouter",
-			"modelOverrides",
-			"z-ai/glm-5.3-flash",
-			"samplingParams",
-			"provider",
-			"only",
-		]);
-		expect(only).toEqual(["streamlake/fp8", "novita/fp8", "gmicloud/fp8"]);
-		const sort = at(modelsTarget.fragment, [
-			"providers",
-			"openrouter",
-			"modelOverrides",
-			"z-ai/glm-5.3-flash",
-			"samplingParams",
-			"provider",
-			"sort",
-		]);
-		expect(sort).toEqual({ by: "price" });
+		expect(glmProvider("only")).toEqual(["streamlake/fp8", "novita/fp8", "gmicloud/fp8"]);
+		expect(glmProvider("sort")).toEqual({ by: "price" });
+	});
+
+	test("models fragment disables OpenRouter fallbacks on glm-5.3-flash", () => {
+		expect(glmProvider("allow_fallbacks")).toBe(false);
 	});
 
 	test("models fragment enables OpenRouter session affinity on muse-spark", () => {
