@@ -36,26 +36,31 @@ unrelated keys preserved — the following fragments into
 
 | File | Fragment |
 |---|---|
-| `models.json` | `modelOverrides` for `z-ai/glm-5.3-flash`: restrict routing to fp8 endpoints (`streamlake/fp8`, `novita/fp8`) sorted by price with `allow_fallbacks: false`; session-affinity compat flags for `meta/muse-spark-1.3-contributor` |
+| `models.json` | `modelOverrides` for `z-ai/glm-5.3-flash`: single-endpoint bootstrap pin (StreamLake) with `allow_fallbacks: false`; session-affinity compat flags for `meta/muse-spark-1.3-contributor` |
 | `settings.json` | `retry`: enabled, 4 retries, 2 s base delay, 60 s max delay |
 | `settings.json` | `compaction.modelOverrides`: per-model auto-compact thresholds (see below) |
 
-### Why `allow_fallbacks: false` on GLM
+### Runtime failover policy (`provider-pin.ts`)
 
-`allow_fallbacks: false` does **not** disable failover inside the `only`
-list — verified experimentally: with a dead endpoint first in the list,
-OpenRouter still serves from the next one. What it does is forbid serving
-from any provider **outside** the list, and surface an error when every
-listed endpoint is unavailable (Pi's retry policy — 4 retries, exponential
-2 s → 60 s backoff — then kicks in, shown as `↻N` in the status line).
-Within the list, the router skips an unavailable endpoint (429/outage)
-instantly, so per-provider client-side backoff on 429 is not expressible
-in OpenRouter routing preferences.
+OpenRouter's router cannot be told to retry the same provider on a 429 —
+within an `only` list it skips an unavailable endpoint instantly (verified
+experimentally), so any multi-endpoint list loses the context cache on the
+first rate limit. The extension therefore owns routing at the HTTP layer:
 
-GMICloud is excluded from the list: it is the most expensive fp8 endpoint
-and intermittently rejects real Pi payloads with spurious 400s
-("Invalid request parameters" from an internal MaaS component) that it
-later serves unchanged.
+- Every GLM request is rewritten via the `before_provider_request` hook to
+  carry `provider.only = [activeEndpoint]` — a single endpoint, so
+  OpenRouter has nothing to fail over to.
+- A 429 then surfaces to Pi's retry layer, which re-issues the same
+  payload — same endpoint — with exponential backoff honoring
+  `Retry-After`, up to the agent retry policy's `maxRetries` (4).
+- A model request only counts as failed once its retries are exhausted
+  (`message_end` with `stopReason: "error"`). After
+  `FAIL_THRESHOLD` (2) consecutive failures the pin moves to the next
+  endpoint (Novita); after `COOLDOWN_MS` (10 min) without failures the
+  cheapest endpoint (StreamLake) is restored.
+
+The static fragment pins StreamLake as a safe bootstrap default for
+sessions where the extension is not loaded.
 
 ### Compaction tuning
 

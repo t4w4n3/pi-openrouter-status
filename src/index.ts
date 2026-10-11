@@ -17,6 +17,7 @@ import { applyConfig, checkApplied, getAgentDir } from "./apply-config.ts";
 import { tuneConfigTargets } from "./compaction-tune.ts";
 import { installOpenRouterFooter } from "./footer-render.ts";
 import { CONFIG_TARGETS } from "./fragments.ts";
+import { ProviderPin } from "./provider-pin.ts";
 import { createStatusLine } from "./status-line.ts";
 
 const COMMAND_NAME = "openrouter-pin";
@@ -102,6 +103,7 @@ function notifyMissing(ctx: ExtensionContext, missing: readonly string[]): void 
 // biome-ignore lint/style/noDefaultExport: required by the Pi extension loader
 export default function (pi: ExtensionAPI) {
 	const line = createStatusLine();
+	const pin = new ProviderPin();
 	let footerInstalled = false;
 	const hinted = { shown: false };
 	// Extensions read HOME (and honor PI_CODING_AGENT_DIR via getAgentDir);
@@ -112,6 +114,15 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("message_end", (event) => {
 		line.onMessageEnd(event);
+		const message = event.message as { role?: string; stopReason?: string };
+		pin.onMessageEnd(message.role, message.stopReason);
+	});
+
+	// Rewrite every GLM request to the active endpoint so OpenRouter never
+	// fails over silently: upstream 429s reach Pi's retry layer, which
+	// re-issues the same payload (same endpoint) with backoff.
+	pi.on("before_provider_request", (event) => {
+		pin.onBeforeProviderRequest(event.payload);
 	});
 
 	pi.on("provider_stream_event", async (event) => {
@@ -124,6 +135,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", () => {
 		line.onBeforeAgentStart();
+		pin.onBeforeAgentStart();
 	});
 
 	pi.on("session_start", async (_event, ctx) => {

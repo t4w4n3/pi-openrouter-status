@@ -36,8 +36,8 @@ function glmProvider(key: string): JsonValue | undefined {
 }
 
 describe("config fragments", () => {
-	test("models fragment pins glm-5.3-flash to fp8 endpoints sorted by price", () => {
-		expect(glmProvider("only")).toEqual(["streamlake/fp8", "novita/fp8"]);
+	test("models fragment pins glm-5.3-flash to the cheapest fp8 endpoint", () => {
+		expect(glmProvider("only")).toEqual(["streamlake/fp8"]);
 		expect(glmProvider("sort")).toEqual({ by: "price" });
 	});
 

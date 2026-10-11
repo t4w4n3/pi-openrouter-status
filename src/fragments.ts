@@ -5,15 +5,14 @@
  * when `/openrouter-pin` runs:
  *
  * - `models.json` — OpenRouter `modelOverrides`:
- *   - `z-ai/glm-5.3-flash`: restrict routing to fp8 endpoints (StreamLake,
- *     Novita) sorted by price, with fallbacks disabled so nothing outside
- *     the list can serve (preserving the resolved endpoint's context
- *     cache). Note: within the list, OpenRouter still skips an unavailable
- *     endpoint instantly (429/outage) — client-side backoff only kicks in
- *     when the whole list fails. GMICloud is excluded: most expensive and
- *     intermittently 400s real Pi payloads. The status line renders the
- *     provider actually resolved from these chunks, e.g.
- *     `⇢ StreamLake · fp8 ↻1`.
+ *   - `z-ai/glm-5.3-flash`: single-endpoint bootstrap pin (StreamLake)
+ *     with fallbacks disabled. At runtime the extension rewrites every
+ *     GLM request to the active endpoint and moves the pin itself:
+ *     upstream 429s surface to Pi's retry layer (same endpoint, backoff
+ *     honoring Retry-After), and only after repeated ultimate failures
+ *     does the pin move to the next endpoint (see `provider-pin.ts`).
+ *     The status line renders the provider actually resolved from these
+ *     chunks, e.g. `⇢ StreamLake · fp8 ↻1`.
  *   - `meta/muse-spark-1.3-contributor`: session-affinity compat flags so
  *     consecutive requests stick to the same endpoint.
  * - `settings.json` — agent-level retry policy for transient failures.
@@ -34,7 +33,7 @@ export const modelsFragment: JsonValue = {
 				[GLM_MODEL_ID]: {
 					samplingParams: {
 						provider: {
-							only: ["streamlake/fp8", "novita/fp8"],
+							only: ["streamlake/fp8"],
 							sort: { by: "price" },
 							// biome-ignore lint/style/useNamingConvention: field name from the OpenRouter API payload
 							allow_fallbacks: false,
