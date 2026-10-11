@@ -36,22 +36,26 @@ unrelated keys preserved — the following fragments into
 
 | File | Fragment |
 |---|---|
-| `models.json` | `modelOverrides` for `z-ai/glm-5.3-flash`: restrict routing to fp8 endpoints (`streamlake/fp8`, `novita/fp8`, `gmicloud/fp8`) sorted by price with `allow_fallbacks: false`; session-affinity compat flags for `meta/muse-spark-1.3-contributor` |
+| `models.json` | `modelOverrides` for `z-ai/glm-5.3-flash`: restrict routing to fp8 endpoints (`streamlake/fp8`, `novita/fp8`) sorted by price with `allow_fallbacks: false`; session-affinity compat flags for `meta/muse-spark-1.3-contributor` |
 | `settings.json` | `retry`: enabled, 4 retries, 2 s base delay, 60 s max delay |
 | `settings.json` | `compaction.modelOverrides`: per-model auto-compact thresholds (see below) |
 
 ### Why `allow_fallbacks: false` on GLM
 
-OpenRouter fails over to the next provider on the **first upstream error,
-including 429**, before the error reaches the client. Each provider holds a
-distinct context cache, so a failover re-pays full prompt tokens at
-uncached prices. Disabling fallbacks makes the 429 surface to Pi, whose
-retry policy (4 retries, exponential 2 s → 60 s backoff) retries the same
-routing — and with `sort: price` the same cheapest endpoint is re-selected,
-preserving the cache. Only when the endpoint is hard down does the turn
-fail after the retries (shown as `↻N` in the status line); re-running
-`/openrouter-pin` after removing the dead endpoint from `only` re-pins to
-the next-cheapest fp8 endpoint.
+`allow_fallbacks: false` does **not** disable failover inside the `only`
+list — verified experimentally: with a dead endpoint first in the list,
+OpenRouter still serves from the next one. What it does is forbid serving
+from any provider **outside** the list, and surface an error when every
+listed endpoint is unavailable (Pi's retry policy — 4 retries, exponential
+2 s → 60 s backoff — then kicks in, shown as `↻N` in the status line).
+Within the list, the router skips an unavailable endpoint (429/outage)
+instantly, so per-provider client-side backoff on 429 is not expressible
+in OpenRouter routing preferences.
+
+GMICloud is excluded from the list: it is the most expensive fp8 endpoint
+and intermittently rejects real Pi payloads with spurious 400s
+("Invalid request parameters" from an internal MaaS component) that it
+later serves unchanged.
 
 ### Compaction tuning
 

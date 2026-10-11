@@ -1,6 +1,6 @@
 {
 	"name": "pi-openrouter-status",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Pi extension: OpenRouter status line (resolved provider, quantization, retries) plus idempotent config snippets for provider pinning and the agent retry policy",
 	"type": "module",
 	"license": "MIT",
