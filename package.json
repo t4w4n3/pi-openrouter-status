@@ -1,6 +1,6 @@
 {
 	"name": "pi-openrouter-status",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Pi extension: OpenRouter status line (resolved provider, quantization, retries) on the footer",
 	"type": "module",
 	"license": "MIT",

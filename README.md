@@ -30,7 +30,7 @@ model + thinking level, other extensions' statuses).
 ## Install
 
 ```sh
-pi install git:github.com/t4w4n3/pi-openrouter-status@v0.2.0
+pi install git:github.com/t4w4n3/pi-openrouter-status@v0.3.0
 ```
 
 Requires an OpenRouter model as the active model for the status line to
