@@ -52,7 +52,9 @@ run = "osv-scanner scan --lockfile=bun.lock --format=table"
 
 [tasks.scan]
 description = "Trivy scan: vulnerabilities, misconfigurations, secrets"
-run = "trivy fs --scanners vuln,misconfig,secret --exit-code 1 ."
+# .mise holds mise-pinned tool lockfiles (e.g. semgrep's Python env) —
+# dev tooling, never shipped with the package; scan only project code.
+run = "trivy fs --scanners vuln,misconfig,secret --exit-code 1 --skip-dirs .mise ."
 
 # --- aggregate gates ---------------------------------------------------------
 
